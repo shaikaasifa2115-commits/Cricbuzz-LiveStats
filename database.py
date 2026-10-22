@@ -5,12 +5,35 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": os.getenv("MYSQL_PASSWORD"),
-    "database": "cricbuzz_livestats",
-}
+
+def get_db_config():
+    """Use Aiven on Streamlit Cloud and local MySQL on your computer."""
+    try:
+        import streamlit as st
+
+        if "mysql" in st.secrets:
+            mysql_secrets = st.secrets["mysql"]
+
+            return {
+                "host": mysql_secrets["host"],
+                "port": int(mysql_secrets["port"]),
+                "user": mysql_secrets["user"],
+                "password": mysql_secrets["password"],
+                "database": "cricbuzz_livestats",
+                "ssl_ca": mysql_secrets["ssl_ca"],
+            }
+    except (ImportError, FileNotFoundError):
+        pass
+
+    return {
+        "host": "localhost",
+        "user": "root",
+        "password": os.getenv("MYSQL_PASSWORD"),
+        "database": "cricbuzz_livestats",
+    }
+
+
+DB_CONFIG = get_db_config()
 
 
 def get_connection():
