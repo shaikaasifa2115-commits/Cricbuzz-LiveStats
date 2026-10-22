@@ -1,52 +1,72 @@
 
 import os
 import mysql.connector
+import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
 def get_db_config():
-    """Use Aiven on Streamlit Cloud and local MySQL on your computer."""
+    """Read database settings from Streamlit Secrets or local .env."""
+
     try:
-        import streamlit as st
+        secrets = st.secrets
+        host = secrets.get("MYSQL_HOST", os.getenv("MYSQL_HOST", "localhost"))
+        user = secrets.get("MYSQL_USER", os.getenv("MYSQL_USER", "root"))
+        password = secrets.get("MYSQL_PASSWORD", os.getenv("MYSQL_PASSWORD"))
+        port = int(secrets.get("MYSQL_PORT", os.getenv("MYSQL_PORT", "3306")))
+        database = secrets.get(
+            "MYSQL_DATABASE",
+            os.getenv("MYSQL_DATABASE", "cricbuzz_livestats"),
+        )
+    except Exception:
+        host = os.getenv("MYSQL_HOST", "localhost")
+        user = os.getenv("MYSQL_USER", "root")
+        password = os.getenv("MYSQL_PASSWORD")
+        port = int(os.getenv("MYSQL_PORT", "3306"))
+        database = os.getenv("MYSQL_DATABASE", "cricbuzz_livestats")
 
-        if "mysql" in st.secrets:
-            mysql_secrets = st.secrets["mysql"]
+    if not password:
+        raise ValueError("MYSQL_PASSWORD is missing from environment settings.")
 
-            return {
-                "host": mysql_secrets["host"],
-                "port": int(mysql_secrets["port"]),
-                "user": mysql_secrets["user"],
-                "password": mysql_secrets["password"],
-                "database": "cricbuzz_livestats",
-                "ssl_ca": mysql_secrets["ssl_ca"],
-            }
-    except (ImportError, FileNotFoundError):
-        pass
-
-    return {
-        "host": "localhost",
-        "user": "root",
-        "password": os.getenv("MYSQL_PASSWORD"),
-        "database": "cricbuzz_livestats",
+    config = {
+        "host": host,
+        "user": user,
+        "password": password,
+        "port": port,
+        "database": database,
+        "connection_timeout": 15,
     }
 
+    # Enable SSL for remote databases such as Aiven.
+    if host not in ("localhost", "127.0.0.1"):
+        config["ssl_disabled"] = False
 
-DB_CONFIG = get_db_config()
+    return config
 
 
 def get_connection():
-    """Connect Python to the MySQL database."""
+    """Connect Python to MySQL and log detailed connection errors."""
+
     try:
-        return mysql.connector.connect(**DB_CONFIG)
-    except mysql.connector.Error as error:
-        print("MySQL connection error:", error)
+        config = get_db_config()
+        connection = mysql.connector.connect(**config)
+        print("MySQL connection successful!")
+        return connection
+
+    except Exception as error:
+        # Do not print passwords or other secret values.
+        print(
+            f"MySQL connection failed: "
+            f"{type(error).__name__}: {error}"
+        )
         return None
 
 
 def save_matches(matches):
     """Insert new matches or update existing matches."""
+
     if not matches:
         print("No matches to save.")
         return False
@@ -58,16 +78,8 @@ def save_matches(matches):
 
     query = """
         INSERT INTO matches (
-            match_id,
-            series_name,
-            match_type,
-            match_description,
-            team1,
-            team2,
-            venue,
-            city,
-            match_status,
-            start_date
+            match_id, series_name, match_type, match_description,
+            team1, team2, venue, city, match_status, start_date
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
